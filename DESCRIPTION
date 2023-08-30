@@ -1,0 +1,58 @@
+Package: gg4way
+Title: 4way Plots of Differential Expression
+Version: 0.99.0
+Authors@R: c(
+    person(given = "Ben",
+           family = "Laufer",
+           role = c("aut", "cre"),
+           email = "blaufer@gmail.com",
+           comment = c(ORCID = "0000-0002-7558-1335")),
+    person(given = "Brad",
+           family = "Friedman",
+           role = c("aut")))
+Description: 4way plots enable a comparison of two contrasts of differential gene expression. The gg4way package creates 4way plots using the ggplot2 framework and supports popular Bioconductor objects. The package also provides information about the correlation between contrasts and significant genes of interest.
+License: MIT + file LICENSE
+URL: https://github.com/ben-laufer/gg4way
+BugReports: https://github.com/ben-laufer/gg4way/issues
+biocViews: 
+    Software,
+    Visualization,
+    DifferentialExpression,
+    GeneExpression,
+    Transcription,
+    RNASeq,
+    SingleCell,
+    Sequencing
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Depends:
+    R (>= 4.3.0),
+    ggplot2
+Imports: 
+    DESeq2,
+    dplyr,
+    ggrepel,
+    glue,
+    janitor,
+    limma,
+    magrittr,
+    methods,
+    purrr,
+    rlang,
+    scales,
+    stats,
+    stringr,
+    tibble,
+    tidyr
+Suggests: 
+    airway,
+    BiocStyle,
+    edgeR,
+    knitr,
+    org.Hs.eg.db,
+    rmarkdown,
+    testthat
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+LazyData: false

@@ -1,0 +1,256 @@
+---
+title: "gg4way"
+author: 
+  - name: "Ben Laufer"
+output: 
+  BiocStyle::html_document:
+    toc_float: TRUE
+bibliography: references.bib 
+date: "`r doc_date()`"
+package: "`r pkg_ver('gg4way')`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{gg4way}
+  %\VignetteEncoding{UTF-8}  
+---
+
+```{r Setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE,
+                      message = FALSE,
+                      crop = NULL)
+```
+
+# Introduction
+
+4way plots enable a comparison of two contrasts of differential gene expression [@Friedman]. The gg4way package creates 4way plots using the ggplot2 framework and supports popular Bioconductor objects. The package also provides information about the correlation between contrasts and significant genes of interest.
+
+# Installation
+
+```{r Install, eval = FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager")
+}
+
+BiocManager::install("gg4way")
+```
+
+To install the development version directly from GitHub:
+
+```{r Install GitHub, eval = FALSE}
+if (!requireNamespace("remotes", quietly = TRUE)) {
+    install.packages("remotes")
+}
+
+remotes::install_github("ben-laufer/gg4way")
+```
+
+# Quick start: limma
+
+This example involves testing a popular RNA-seq dataset using limma-voom.
+
+## Prepare data
+
+First the [airway](https://doi.org/doi:10.18129/B9.bioc.airway) data package is loaded, gene symbols are added, and then for the purpose of this vignette only genes with symbols are kept.
+
+```{r Prepare data}
+library("airway")
+data("airway")
+se <- airway
+
+library("org.Hs.eg.db")
+rowData(se)$symbol <- mapIds(org.Hs.eg.db,
+    keys = rownames(se),
+    column = "SYMBOL",
+    keytype = "ENSEMBL")
+
+rowData(se)$ID <- rownames(se)
+
+se <- se[!is.na(rowData(se)$symbol)]
+```
+
+## limma-voom
+
+```{r limma}
+library("edgeR")
+library("limma")
+
+dge <- se |>
+    SE2DGEList()
+
+design <- model.matrix(~ 0 + cell + dex, data = dge$samples)
+colnames(design) <- gsub("cell", "", colnames(design))
+
+contr.matrix <- makeContrasts(N61311 - N052611,
+                              N061011 - N052611,
+                              levels = c("N052611", "N061011",
+                                         "N080611", "N61311",
+                                         "dexuntrt"))
+
+keep <- filterByExpr(dge, design)
+dge <- dge[keep, ]
+
+efit <- dge |>
+    calcNormFactors() |>
+    voomWithQualityWeights(design) |>
+    lmFit(design) |>
+    contrasts.fit(contrasts = contr.matrix) |>
+    eBayes()
+```
+
+## Plot
+
+Finally, we create a 4way plot comparing the two contrasts. The legend title at the bottom shows that there is a correlation of r = 0.42, which is exemplified by more shared DEGs (blue dots) going in the same direction (upper right and bottom left) than opposite direction (upper left and bottom right). The numbers in the plot give the totals for the different quadrants of the 4way plot. If you look at the bottom left quadrant, the blue text shows that there are 71 DEGs where N052611 has significantly increased expression relative to both N61311 and N061011. The red text shows that there are 249 DEGs where N052611 has significantly increased expression relative to N61311 only, while the green text shows that there are 51 DEGs where N052611 has significantly increased expression relative to N061011 only.
+
+```{r Plot limma, fig.width=6, fig.height=6.5}
+library("gg4way")
+
+efit |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611")
+```
+
+# Add gene labels
+
+## Table for labels
+
+The genes that are significant in both contrasts can be obtained in a table through the `sharedOnly` argument.
+
+```{r limma table}
+efit |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611",
+           sharedOnly = TRUE) |>
+    head()
+```
+
+## Plotting labels
+
+Gene symbols can be added to the plot through the `label` argument. Setting it to "shared" will plot all the genes colored blue, while specific genes can be labelled by providing their symbol. Below, two of the genes from the above table are plotted.
+
+```{r Plot limma labels, fig.width=6, fig.height=6.5}
+efit |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611",
+           label = c("PSG5", "ERAP2"))
+```
+
+# Advanced options
+
+## Axis titles
+
+The axis titles can be further customized through ggplot2.
+
+```{r Customizing axis titles, fig.width=6, fig.height=6.5}
+efit |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611") +
+    xlab(expression(atop(
+        paste("Higher in Line 2" %<->% "Higher in Line 1"),
+        paste("Line 1 vs 2 LogFC")))) +
+    ylab(expression(atop(
+        paste("Line 3 vs 2"),
+        paste("Higher in Line 2" %<->% "Higher in Line 3"))))
+```
+
+## Correlation only
+
+The `corOnly` argument results in the function returning the Pearson correlation coefficient. Advanced users can apply this in their own functions to compare across pairs in a heatmap.
+
+```{r Correlation}
+efit |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611",
+           corOnly = TRUE) |>
+    round(digits = 2)
+```
+
+# DESeq2
+
+In addition to the output of limma, the functions are also compatible with DESeq2. If a user is starting here, they will first have to run the [Prepare data] subsection in the Quick start: limma section.
+
+## DESeq analysis
+
+For the purpose of this vignette, we filter the object to remove the [difference](https://support.bioconductor.org/p/122825/) between the results name and contrast approaches shown below.
+
+```{r DESeq2}
+library("DESeq2")
+
+ddsSE <- se |>
+    DESeqDataSet(design = ~ cell + dex)
+
+keep <- ddsSE |>
+    counts() |>
+    apply(1, function(gene) {
+        all(gene != 0)
+    })
+
+ddsSE <- ddsSE[keep, ]
+
+dds <- ddsSE |>
+    DESeq()
+```
+
+## Plot by results name
+
+```{r Plot DESeq2 Name, fig.width=6, fig.height=6.5}
+dds |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611",
+           symbol = "ID",
+           logFC = "log2FoldChange",
+           FDR = "padj")
+```
+
+## Plot by contrast
+
+```{r Plot DESeq2 contrast, fig.width=6, fig.height=6.5}
+library("purrr")
+
+list("N61311 vs N052611" = c("cell", "N61311", "N052611"),
+     "N061011 vs N052611" = c("cell", "N061011", "N052611")) |>
+    map(~ results(dds, contrast = .x)) |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611",
+           symbol = "ID",
+           logFC = "log2FoldChange",
+           FDR = "padj")
+```
+
+## Plot by lfcShrink
+
+```{r Plot DESeq2 lfcShrink, fig.width=6, fig.height=6.5}
+list("N61311 vs N052611" = c("cell", "N61311", "N052611"),
+     "N061011 vs N052611" = c("cell", "N061011", "N052611")) |>
+    map(~ dds |>
+        results(contrast = .x) |>
+        lfcShrink(dds, contrast = .x, res = _, type = "normal")) |>
+    tidyDGE() |>
+    gg4way(x = "N61311 vs N052611",
+           y = "N061011 vs N052611",
+           symbol = "ID",
+           logFC = "log2FoldChange",
+           FDR = "padj")
+```
+
+# Other packages
+
+gg4way is not limited to input from limma and DESeq2. It only requires a list of tibbles or data frames with columns containing the ID, symbol, LogFC, and FDR. As the DESeq2 example shows, the ID and symbol columns can be the same.
+
+# Package support
+
+The [Bioconductor support site](https://support.bioconductor.org/) is the preferred method to ask for help. Before posting, it's recommended to check [previous posts](https://support.bioconductor.org/tag/gg4way/) for the answer and look over the [posting guide](http://www.bioconductor.org/help/support/posting-guide/). For the post, it's important to use the `gg4way` tag and provide both a minimal reproducible example and session information.
+
+# Session info
+
+```{r Session info, echo=FALSE}
+sessionInfo()
+```
+
+# References
