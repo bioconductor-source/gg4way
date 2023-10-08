@@ -45,7 +45,7 @@ gg4way_example_data <- function() {
 
     efit <- dge |>
         edgeR::calcNormFactors() |>
-        limma::voomWithQualityWeights(design) |>
+        limma::voom(design) |>
         limma::lmFit(design) |>
         limma::contrasts.fit(contrasts = contr.matrix) |>
         limma::eBayes()

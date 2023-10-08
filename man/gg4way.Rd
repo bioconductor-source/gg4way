@@ -2,10 +2,14 @@
 % Please edit documentation in R/gg4way.R
 \name{gg4way}
 \alias{gg4way}
+\alias{gg4way.default}
+\alias{gg4way.MArrayLM}
+\alias{gg4way.list}
+\alias{gg4way.DESeqDataSet}
 \title{Create a 4way plot}
 \usage{
-gg4way(
-  tidyList,
+\method{gg4way}{default}(
+  DGEdata,
   x = NULL,
   y = NULL,
   ID = "ID",
@@ -13,23 +17,35 @@ gg4way(
   logFC = "logFC",
   FDR = "adj.P.Val",
   sep = " vs ",
-  label = FALSE,
   FDRcutoff = 0.05,
   logFCcutoff = 1,
+  label = FALSE,
   colorVector = c("grey80", "firebrick", "forestgreen", "mediumblue"),
   lineColor = "grey60",
-  sharedOnly = FALSE,
-  corOnly = FALSE,
   textSize = 4,
-  textOffset = 0.25
+  textNudge = 0.25,
+  ...
 )
 }
 \arguments{
-\item{tidyList}{A list of tibbles with DGE results from limma or DESeq2}
+\item{DGEdata}{The object to plot from:
+\itemize{
+\item \code{limma:} A \link[limma:MArrayLM-class]{MArrayLM} object from
+\link[limma]{eBayes} or \link[limma]{treat}
+\item \code{edgeR:} A list of \link[edgeR:DGELRT-class]{DGELRT} objects
+from \link[edgeR]{glmQLFTest} or \link[edgeR]{glmTreat}
+\item \code{DESeq2:} a \link[DESeq2:DESeqDataSet-class]{DESeqDataSet} from
+\link[DESeq2]{DESeq} or a list of
+\link[DESeq2:DESeqResults-class]{DESeqResults} from \link[DESeq2]{results}
+\item \code{Other packages:} A list of data.frames,
+see details section for more infromation
+}}
 
-\item{x}{Character specifying name of DGE results for the x-axis}
+\item{x}{Character specifying name of DGE results within object
+for the x-axis}
 
-\item{y}{Character specifying name of DGE results for the y-axis}
+\item{y}{Character specifying name of DGE results within object
+for the y-axis}
 
 \item{ID}{Column name for gene ID}
 
@@ -42,13 +58,13 @@ gg4way(
 \item{sep}{Character specifying the separator between conditions
 for the contrast}
 
-\item{label}{Character vector specifying genes to label
-(FALSE for none, "shared" for all blue)}
-
 \item{FDRcutoff}{Numeric for the FDR cut-off for DEGs, default is 0.05}
 
 \item{logFCcutoff}{Numeric for the absolute Log2FC cut-off for DEGs,
 default is 1}
+
+\item{label}{Character vector specifying genes to label
+(FALSE for none, TRUE for all blue)}
 
 \item{colorVector}{Character vector of colors in the following order:
 "not significant", "significant in x", "significant in y",
@@ -56,31 +72,43 @@ default is 1}
 
 \item{lineColor}{Color of lines}
 
-\item{sharedOnly}{Logical indicating whether to only return a tibble of
-shared DEGs}
+\item{textSize}{Numeric specifying size of text with gene
+overlap category totals}
 
-\item{corOnly}{Logical indicating whether to only return the
-correlation coefficient}
+\item{textNudge}{Numeric specifying nudge of text with gene
+overlap category totals}
 
-\item{textSize}{Numeric specifying size of text with sums}
-
-\item{textOffset}{Numeric specifying offset of text with sums}
+\item{...}{Support for additional arguments used internally by
+\code{gg4way.MArrayLM}, \code{gg4way.list},
+and \code{gg4way.DESeqDataSet}}
 }
 \value{
 A \link[ggplot2]{ggplot}
-(or numeric or \link[tibble:tbl_df-class]{tibble})
 }
 \description{
-4way plots enable a comparison of two contrasts of differential
-gene expression. The gg4way package creates 4way plots using the ggplot2
-framework and supports popular Bioconductor objects.
-The package also provides information about the correlation between
-contrasts and significant genes of interest.
+Create a 4way plot to comparison the logFC values from
+two contrasts of differential gene expression
+}
+\details{
+When a list of data.frames is provided to the \code{DGEdata} argument,
+they should have the following column names and data:
+\tabular{ll}{
+\code{ID} \tab Character vector with the feature ID (i.e. EnsemblID) \cr
+\tab \cr
+\code{symbol} \tab Optional character vector with gene symbol for labels \cr
+\tab \cr
+\code{LogFC} \tab Numeric with the logFC \cr
+\tab \cr
+\code{FDR} \tab Numeric with the FDR \cr
+}
+
+The correlation coefficient is useful for comparing across multiple plots.
+It's important to consider whether there are any common factors when
+comparing values, since that can result in a larger value.
 }
 \examples{
 data("airwayFit")
 airwayFit |>
-    tidyDGE() |>
     gg4way(x = "N61311 vs N052611",
            y = "N061011 vs N052611")
 }

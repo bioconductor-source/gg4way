@@ -7,6 +7,9 @@
 \format{
 An object of class \code{MArrayLM} with 14516 rows and 2 columns.
 }
+\source{
+\link[airway]{airway}
+}
 \usage{
 data(airwayFit)
 }
@@ -14,7 +17,7 @@ data(airwayFit)
 A \link[limma:MArrayLM-class]{MArrayLM}
 }
 \description{
-Generate example data using
-the \link[airway]{airway} data package
+Generate example data from
+the \link[airway]{airway} data package using \link[limma]{eBayes}
 }
 \keyword{datasets}

@@ -1,377 +1,114 @@
-#' @title Prepare data
-#' @description Prepare data for a 4way plot
-#' @keywords internal
-#' @inheritParams gg4way
-#' @return A \link[tibble:tbl_df-class]{tibble}
-#' @importFrom magrittr extract
-#' @importFrom dplyr bind_rows mutate select case_when any_of arrange
-#' @importFrom tidyr pivot_wider drop_na
-#' @importFrom rlang sym
-#'
-.prepareData <- function(tidyList = tidyList,
-                         x = x,
-                         y = y,
-                         ID = ID,
-                         symbol = symbol,
-                         logFC = logFC,
-                         FDR = FDR,
-                         logFCcutoff = logFCcutoff,
-                         FDRcutoff = FDRcutoff){
-
-    tidyList |>
-        magrittr::extract(c(x, y)) |>
-        dplyr::bind_rows(.id = "contrast") |>
-        dplyr::mutate(ID = !!rlang::sym(ID),
-                      symbol = !!rlang::sym(symbol),
-                      LogFC = !!rlang::sym(logFC),
-                      FDR = !!rlang::sym(FDR)) |>
-        dplyr::mutate(Direction = dplyr::case_when(LogFC > 0 ~ "Up",
-                                                   LogFC < 0 ~ "Down")) |>
-        dplyr::select("contrast", "ID", "LogFC", "FDR", "Direction",
-                      dplyr::any_of(c("symbol"))) |>
-        dplyr::mutate(FDRpass = dplyr::case_when(abs(LogFC) > logFCcutoff &
-                                                     FDR < FDRcutoff ~ TRUE,
-                                                 .default = FALSE)) |>
-        tidyr::pivot_wider(names_from = contrast,
-                           names_glue = "{contrast} {.value}",
-                           values_from = c(LogFC, FDR, FDRpass, Direction)) |>
-        tidyr::drop_na(!dplyr::any_of(c("ID", "symbol"))) |>
-        dplyr::mutate(Significant = dplyr::case_when(
-            !!rlang::sym(paste(x, "FDRpass")) == FALSE &
-                !!rlang::sym(paste(y, "FDRpass")) == FALSE ~
-                "Not Significant",
-            !!rlang::sym(paste(x, "FDRpass")) == TRUE &
-                !!rlang::sym(paste(y, "FDRpass")) == FALSE ~
-                paste("Significant in", x),
-            !!rlang::sym(paste(x, "FDRpass")) == FALSE &
-                !!rlang::sym(paste(y, "FDRpass")) == TRUE ~
-                paste("Significant in", y),
-            !!rlang::sym(paste(x, "FDRpass")) == TRUE &
-                !!rlang::sym(paste(y, "FDRpass")) == TRUE ~
-                "Significant in Both") |>
-                factor(levels = c("Not Significant",
-                                  "Significant in Both",
-                                  paste("Significant in", x),
-                                  paste("Significant in", y)))) |>
-        dplyr::arrange(Significant)
-}
-
-#' @title Correlation test
-#' @description Test the correlation between DGE contrasts
-#' @keywords internal
-#' @param DGEtibble A \link[tibble:tbl_df-class]{tibble} of DGE results
-#' @return A numeric of the Pearson correlation
-#' @importFrom dplyr select contains filter_all all_vars
-#' @importFrom stats cor
-#'
-.testCor <- function(DGEtibble = DGEtibble){
-    corMatrix <- DGEtibble |>
-        dplyr::select(dplyr::contains("LogFC")) |>
-        dplyr::filter_all(dplyr::all_vars(is.finite(.))) |>
-        as.matrix()
-
-    cor(x = corMatrix[, 1], y = corMatrix[, 2])
-}
-
-#' @title Summarize counts
-#' @description Create a summary table counts for DGE contrast overlaps for
-#'  shared (quadrants) and non-shared (lines) DEGs
-#' @keywords internal
-#' @inheritParams gg4way
-#' @inheritParams .testCor
-#' @return A \link[tibble:tbl_df-class]{tibble}
-#' @importFrom dplyr filter mutate case_when bind_rows select
-#' @importFrom rlang sym
-#' @importFrom janitor tabyl
-#' @importFrom tidyr crossing
-#' @importFrom glue glue_data
-#'
-.sumCounts <- function(DGEtibble = DGEtibble,
-                       x = x,
-                       y = y){
-    quadCounts <- DGEtibble |>
-        dplyr::filter(!!rlang::sym(paste(x, "FDRpass")) == TRUE &
-                          !!rlang::sym(paste(y, "FDRpass")) == TRUE) |>
-        dplyr::mutate(countGroup = dplyr::case_when(
-            !!rlang::sym(paste(x, "LogFC")) > 1 &
-                !!rlang::sym(paste(y, "LogFC")) > 1 ~ "topRight",
-            !!rlang::sym(paste(x, "LogFC")) < -1 &
-                !!rlang::sym(paste(y, "LogFC")) > 1 ~ "topLeft",
-            !!rlang::sym(paste(x, "LogFC")) > 1 &
-                !!rlang::sym(paste(y, "LogFC")) < -1 ~ "bottomRight",
-            !!rlang::sym(paste(x, "LogFC")) < -1 &
-                !!rlang::sym(paste(y, "LogFC")) < -1 ~ "bottomLeft") |>
-                factor(c("topRight", "topLeft",
-                         "bottomRight", "bottomLeft"))) |>
-        janitor::tabyl(countGroup)
-
-    lineCounts <- DGEtibble |>
-        dplyr::filter(!Significant %in% c("Not Significant",
-                                          "Significant in Both")) |>
-        dplyr::mutate(countGroup = dplyr::case_when(
-            Significant == paste("Significant in", x) ~
-                paste0("sigX ", "x", !!rlang::sym(paste(x, "Direction")),
-                       " y", !!rlang::sym(paste(y, "Direction"))),
-            Significant == paste("Significant in", y) ~
-                paste0("sigY ", "x", !!rlang::sym(paste(x, "Direction")),
-                       " y", !!rlang::sym(paste(y, "Direction")))) |>
-                factor(levels = tidyr::crossing(Sig = c("X", "Y"),
-                                                Direction1 = c("Up", "Down"),
-                                                Direction2 = Direction1) |>
-                           glue::glue_data("sig{Sig} \\
-                                           x{Direction1} y{Direction2}"))) |>
-        janitor::tabyl(countGroup)
-
-    quadCounts |>
-        dplyr::bind_rows(lineCounts) |>
-        dplyr::select(countGroup, n)
-}
-
-#' @title Prepare annotations
-#' @description Prepare text annotations of sums for plotting
-#' @keywords internal
-#' @param countTibble A \link[tibble:tbl_df-class]{tibble} of summarized counts
-#' @inheritParams gg4way
-#' @return A \link[tibble:tbl_df-class]{tibble}
-#' @importFrom dplyr left_join mutate recode
-#' @importFrom tibble tribble
-#' @importFrom stats setNames
-#'
-.prepareAnnotations <- function(countTibble = countTibble,
-                                colorKey = colorKey,
-                                textOffset = textOffset){
-    countTibble |>
-        dplyr::left_join(
-            tibble::tribble(
-                ~countGroup, ~x, ~y, ~color, ~hjust, ~vjust,
-                "sigX xUp yUp", Inf, textOffset, colorKey[2], 1, 0,
-                "sigX xUp yDown", Inf, -textOffset, colorKey[2], 1, 1,
-                "sigX xDown yUp", -Inf, textOffset, colorKey[2], 0, 0,
-                "sigX xDown yDown", -Inf, -textOffset, colorKey[2], 0, 1,
-                "sigY xUp yUp", textOffset, Inf, colorKey[3], 0, 1,
-                "sigY xUp yDown", textOffset, -Inf, colorKey[3], 0, 0,
-                "sigY xDown yUp", -textOffset, Inf, colorKey[3], 1, 1,
-                "sigY xDown yDown", -textOffset, -Inf, colorKey[3], 1, 0,
-                "topRight", Inf, Inf, colorKey[4], 1, 1,
-                "topLeft", -Inf, Inf, colorKey[4], 0, 1,
-                "bottomRight", Inf, -Inf, colorKey[4], 1, 0,
-                "bottomLeft", -Inf, -Inf, colorKey[4], 0, 0),
-            by = "countGroup") |>
-        dplyr::mutate(Significant = dplyr::recode(color,
-                                                  !!!setNames(names(colorKey),
-                                                              colorKey)))
-
-}
-
-#' @title Tidy axis labels
-#' @description Process axis labels from contrast names
-#' @keywords internal
-#' @inheritParams gg4way
-#' @return A \link[base]{call}
-#' @importFrom stringr str_split str_pad
-#' @importFrom rlang expr
-#' @importFrom purrr flatten_chr
-#'
-.tidyLabel <- function(label = NULL,
-                       sep = " vs ",
-                       labelType = c("x", "y")) {
-    stopifnot(!is.null(label) | is.character(label))
-
-    labelParts <- label |>
-        stringr::str_split(sep) |>
-        purrr::flatten_chr()
-
-    tidyPart1 <- labelParts[1]
-
-    tidyPart2 <- labelParts[2]
-
-    spacer1 <- stringr::str_pad("", nchar(tidyPart2), side = "right")
-
-    spacer2 <- stringr::str_pad("", nchar(tidyPart1), side = "right")
-
-    part1 <- rlang::expr(!!spacer2 ~ "Higher in" ~ !!tidyPart2 ~
-                             "" %<->% "" ~
-                             "Higher in" ~ !!tidyPart1 ~ !!spacer1)
-
-    if (labelType == "x") {
-        label <- rlang::expr(atop(!!part1, paste(!!label, " LogFC")))
-    } else if (labelType == "y") {
-        label <- rlang::expr(atop(paste(!!label, " LogFC"), !!part1))
-    }
-
-    return(label)
-}
-
-#' @title gg4way plot
-#' @description Creates a 4way plot
-#' @keywords internal
-#' @inheritParams gg4way
-#' @return A \link[ggplot2]{ggplot}
-#' @import ggplot2
-#' @importFrom stringr str_split str_pad
-#' @importFrom rlang expr
-#' @importFrom purrr flatten_chr
-#'
-.plot4way <- function(DGEtibble = DGEtibble,
-                      x = x,
-                      y = y,
-                      sep = sep,
-                      logFCcutoff = logFCcutoff,
-                      lineColor = lineColor,
-                      colorKey = colorKey,
-                      corRes = corRes,
-                      textKey = textKey,
-                      hjust = hjust,
-                      vjust = vjust,
-                      textSize = textSize,
-                      label = label){
-    p1 <- DGEtibble |>
-        dplyr::mutate(alpha = dplyr::case_match(Significant,
-                                                "Not Significant" ~ 0.5,
-                                                .default = 0.6)) |>
-        ggplot2::ggplot(ggplot2::aes(x = DGEtibble |>
-                                         purrr::pluck(paste(x, "LogFC")),
-                                     y = DGEtibble |>
-                                         purrr::pluck(paste(y, "LogFC")),
-                                     color = Significant)) +
-        ggplot2::geom_point(ggplot2::aes(alpha = alpha), size = 1) +
-        ggplot2::geom_vline(xintercept = c(-logFCcutoff, logFCcutoff),
-                            linetype = "dashed",
-                            color = lineColor) +
-        ggplot2::geom_hline(yintercept = c(-logFCcutoff, logFCcutoff),
-                            linetype = "dashed",
-                            color = lineColor) +
-        ggplot2::geom_hline(yintercept = 0, color = lineColor) +
-        ggplot2::geom_vline(xintercept = 0, color = lineColor) +
-        ggplot2::geom_abline(intercept = 0, slope = 1, color = lineColor) +
-        ggplot2::xlab(x |> .tidyLabel(labelType = "x", sep = sep)) +
-        ggplot2::ylab(y |> .tidyLabel(labelType = "y", sep = sep)) +
-        ggplot2::theme_bw() +
-        ggplot2::theme(legend.position = "bottom") +
-        ggplot2::scale_color_manual(
-            values = colorKey,
-            guide = ggplot2::guide_legend(
-                title = glue::glue("r = {tidyCor}",
-                                   tidyCor = round(corRes, digits = 2)),
-                nrow = 2)) +
-        ## Use geom_label instead to prevent text form getting clipped
-        ggplot2::geom_label(data = textKey,
-                            ggplot2::aes(x = x,
-                                         y = y,
-                                         color = Significant,
-                                         label = n,
-                                         hjust = hjust,
-                                         vjust = vjust),
-                            size = textSize,
-                            alpha = 0.1,
-                            fill = NA,
-                            show.legend = FALSE,
-                            label.padding = ggplot2::unit(0.1, "lines"),
-                            label.size = NA) +
-        ggplot2::scale_alpha(range = c(0.5, 0.6),
-                             guide = "none")
-
-    if (label[1] != FALSE) {
-        if (label[1] == "shared") {
-            label <- DGEtibble |>
-                dplyr::filter(Significant == "Significant in Both") |>
-                dplyr::pull(symbol)
-        }
-
-        p1 <- p1 +
-            ggrepel::geom_label_repel(
-                data = DGEtibble |>
-                    dplyr::mutate(symbol = dplyr::case_match(symbol,
-                                                             label ~ symbol,
-                                                             .default = "")),
-                ggplot2::aes(label = symbol),
-                arrow = grid::arrow(length = ggplot2::unit(0.01, "npc")),
-                min.segment.length = ggplot2::unit(0, "npc"),
-                fill = scales::alpha("white", 0.4),
-                label.padding = ggplot2::unit(0.01, "lines"),
-                label.size = NA,
-                show.legend = FALSE,
-                max.overlaps = Inf)
-    }
-
-    return(p1)
-}
-
 #' @title Create a 4way plot
-#' @description 4way plots enable a comparison of two contrasts of differential
-#'  gene expression. The gg4way package creates 4way plots using the ggplot2
-#'  framework and supports popular Bioconductor objects.
-#'  The package also provides information about the correlation between
-#'  contrasts and significant genes of interest.
-#' @param tidyList A list of tibbles with DGE results from limma or DESeq2
-#' @param x Character specifying name of DGE results for the x-axis
-#' @param y Character specifying name of DGE results for the y-axis
+#' @order 2
+#' @usage NULL
+#' @description Create a 4way plot to comparison the logFC values from
+#'  two contrasts of differential gene expression
+#' @param DGEdata The object to plot from:
+#' \itemize{
+#' \item \code{limma:} A \link[limma:MArrayLM-class]{MArrayLM} object from
+#'  \link[limma]{eBayes} or \link[limma]{treat}
+#' \item \code{edgeR:} A list of \link[edgeR:DGELRT-class]{DGELRT} objects
+#'  from \link[edgeR]{glmQLFTest} or \link[edgeR]{glmTreat}
+#' \item \code{DESeq2:} a \link[DESeq2:DESeqDataSet-class]{DESeqDataSet} from
+#'  \link[DESeq2]{DESeq} or a list of
+#'  \link[DESeq2:DESeqResults-class]{DESeqResults} from \link[DESeq2]{results}
+#'  \item \code{Other packages:} A list of data.frames,
+#'   see details section for more infromation
+#' }
+#' @param x Character specifying name of DGE results within object
+#'  for the x-axis
+#' @param y Character specifying name of DGE results within object
+#'  for the y-axis
 #' @param sep Character specifying the separator between conditions
 #'  for the contrast
 #' @param ID Column name for gene ID
 #' @param symbol Column name for gene symbol description
 #' @param logFC Column name for logFC values
 #' @param FDR Column name for FDR values
-#' @param label Character vector specifying genes to label
-#'  (FALSE for none, "shared" for all blue)
 #' @param FDRcutoff Numeric for the FDR cut-off for DEGs, default is 0.05
 #' @param logFCcutoff Numeric for the absolute Log2FC cut-off for DEGs,
 #'  default is 1
+#' @param label Character vector specifying genes to label
+#'  (FALSE for none, TRUE for all blue)
 #' @param colorVector Character vector of colors in the following order:
 #' "not significant", "significant in x", "significant in y",
 #'  "significant in both"
 #' @param lineColor Color of lines
-#' @param sharedOnly Logical indicating whether to only return a tibble of
-#'  shared DEGs
-#' @param corOnly Logical indicating whether to only return the
-#'  correlation coefficient
-#' @param textSize Numeric specifying size of text with sums
-#' @param textOffset Numeric specifying offset of text with sums
+#' @param textSize Numeric specifying size of text with gene
+#'  overlap category totals
+#' @param textNudge Numeric specifying nudge of text with gene
+#'  overlap category totals
+#' @param ... Support for additional arguments used internally by
+#'  \code{gg4way.MArrayLM}, \code{gg4way.list},
+#'  and \code{gg4way.DESeqDataSet}
+#' @details
+#' When a list of data.frames is provided to the \code{DGEdata} argument,
+#' they should have the following column names and data:
+#'  \tabular{ll}{
+#'   \code{ID} \tab Character vector with the feature ID (i.e. EnsemblID) \cr
+#'   \tab \cr
+#'   \code{symbol} \tab Optional character vector with gene symbol for labels \cr
+#'   \tab \cr
+#'   \code{LogFC} \tab Numeric with the logFC \cr
+#'   \tab \cr
+#'   \code{FDR} \tab Numeric with the FDR \cr
+#'   }
+#'
+#' The correlation coefficient is useful for comparing across multiple plots.
+#'  It's important to consider whether there are any common factors when
+#'  comparing values, since that can result in a larger value.
 #' @return A \link[ggplot2]{ggplot}
-#'  (or numeric or \link[tibble:tbl_df-class]{tibble})
+#' @export
+#'
+gg4way <- function(DGEdata,
+                   ...){
+    UseMethod("gg4way")
+}
+
+#' @rdname gg4way
+#' @order 1
+#' @name gg4way
 #' @importFrom dplyr filter
 #' @importFrom purrr set_names
 #' @importFrom rlang sym
 #' @examples
 #' data("airwayFit")
 #' airwayFit |>
-#'     tidyDGE() |>
 #'     gg4way(x = "N61311 vs N052611",
 #'            y = "N061011 vs N052611")
 #' @export
 #'
-gg4way <- function(tidyList,
-                   x = NULL,
-                   y = NULL,
-                   ID = "ID",
-                   symbol = "symbol",
-                   logFC = "logFC",
-                   FDR = "adj.P.Val",
-                   sep = " vs ",
-                   label = FALSE,
-                   FDRcutoff = 0.05,
-                   logFCcutoff = 1,
-                   colorVector = c("grey80", "firebrick",
-                                   "forestgreen", "mediumblue"),
-                   lineColor = "grey60",
-                   sharedOnly = FALSE,
-                   corOnly = FALSE,
-                   textSize = 4,
-                   textOffset = 0.25) {
+gg4way.default <- function(DGEdata,
+                           x = NULL,
+                           y = NULL,
+                           ID = "ID",
+                           symbol = "symbol",
+                           logFC = "logFC",
+                           FDR = "adj.P.Val",
+                           sep = " vs ",
+                           FDRcutoff = 0.05,
+                           logFCcutoff = 1,
+                           label = FALSE,
+                           colorVector = c("grey80", "firebrick",
+                                           "forestgreen", "mediumblue"),
+                           lineColor = "grey60",
+                           textSize = 4,
+                           textNudge = 0.25,
+                           ...) {
     stopifnot(!is.null(x) | !is.null((y)))
     if (is.null(symbol)) {
         symbol <- "ID"
     }
-    stopifnot(c(x,y) %in% names(tidyList))
+    stopifnot(c(x,y) %in% names(DGEdata))
 
-    if (!all(tidyList[[x]]$ID %in% tidyList[[y]]$ID)) {
+    if (!all(DGEdata[[x]]$ID %in% DGEdata[[y]]$ID)) {
         warning(x, " and ", y,
-            " don't share the same IDs. ",
-            "IDs will be filtered from the results.",
-            noBreaks. = TRUE)
+                " don't share the same IDs. ",
+                "IDs will be filtered from the results.",
+                noBreaks. = TRUE)
     }
 
-    DGEtibble <- .prepareData(tidyList = tidyList,
+    DGEtibble <- .prepareData(DGEdata = DGEdata,
                               x = x,
                               y = y,
                               ID = ID,
@@ -381,21 +118,12 @@ gg4way <- function(tidyList,
                               logFCcutoff = logFCcutoff,
                               FDRcutoff = FDRcutoff)
 
-    if (sharedOnly == TRUE) {
-        return(dplyr::filter(DGEtibble,
-                             !!rlang::sym(paste(x, "FDRpass")) == TRUE &
-                                 !!rlang::sym(paste(y, "FDRpass")) == TRUE))
-    }
-
     corRes <- .testCor(DGEtibble = DGEtibble)
 
-    if (corOnly == TRUE) {
-        return(corRes)
-    }
-
-    countTibble <- .sumCounts(DGEtibble = DGEtibble,
-                              x = x,
-                              y = y)
+    totalTibble <- .totalCounts(DGEtibble = DGEtibble,
+                                x = x,
+                                y = y,
+                                logFCcutoff = logFCcutoff)
 
     colorKey <- colorVector |>
         purrr::set_names(c("Not Significant",
@@ -403,22 +131,180 @@ gg4way <- function(tidyList,
                            paste("Significant in", y),
                            "Significant in Both"))
 
-    textKey <- .prepareAnnotations(countTibble = countTibble,
+    textKey <- .prepareAnnotations(totalTibble = totalTibble,
                                    colorKey = colorKey,
-                                   textOffset = textOffset)
+                                   textNudge = textNudge)
 
-    .plot4way(DGEtibble = DGEtibble,
-              x = x,
-              y = y,
-              sep = sep,
-              logFCcutoff = logFCcutoff,
-              lineColor = lineColor,
-              colorKey = colorKey,
-              corRes = corRes,
-              textKey = textKey,
-              hjust = hjust,
-              vjust = vjust,
-              textSize = textSize,
-              label = label)
+    p1 <- .plot4way(DGEtibble = DGEtibble,
+                    x = x,
+                    y = y,
+                    sep = sep,
+                    logFCcutoff = logFCcutoff,
+                    lineColor = lineColor,
+                    colorKey = colorKey,
+                    corRes = corRes,
+                    textKey = textKey,
+                    hjust = hjust,
+                    vjust = vjust,
+                    textSize = textSize,
+                    label = label)
 
+    class(p1) <- c("gg4way", class(p1))
+
+    p1
+}
+
+#' @rdname gg4way
+#' @usage NULL
+#' @importFrom limma topTable
+#' @importFrom purrr set_names map
+#' @importFrom stringr str_replace
+#' @importFrom tibble rownames_to_column as_tibble
+#' @importFrom magrittr %>%
+#' @export
+#'
+gg4way.MArrayLM <- function(DGEdata,
+                            ID = ID,
+                            symbol = symbol,
+                            logFC = logFC,
+                            FDR = FDR,
+                            ...){
+    if (missing(ID)) {ID <- "ID"}
+    if (missing(symbol)) {symbol <- "symbol"}
+    if (missing(logFC)) {logFC <- "logFC"}
+    if (missing(FDR)){ FDR <- "adj.P.Val"}
+
+    ## magrittr pipe used due to need for unnamed placeholder
+    DGEdata$contrasts %>%
+        colnames() %>%
+        purrr::set_names() %>%
+        purrr::map(~ DGEdata %>%
+                       {if("treat.lfc" %in% names(DGEdata)){
+                           limma::topTreat(fit = .,
+                                           n = Inf,
+                                           coef = .x)
+                       }else{
+                           limma::topTable(fit = .,
+                                           n = Inf,
+                                           coef = .x)
+                       }} %>%
+                       tibble::rownames_to_column() %>%
+                       tibble::as_tibble()) %>%
+        purrr::set_names(names(.) %>%
+                             stringr::str_replace("[-]", "vs")) %>%
+        gg4way.default(DGEdata = .,
+                       ID = ID,
+                       symbol = symbol,
+                       logFC = logFC,
+                       FDR = FDR,
+                       ...)
+}
+
+#' @rdname gg4way
+#' @usage NULL
+#' @importFrom edgeR topTags
+#' @importFrom purrr set_names map
+#' @importFrom stringr str_replace
+#' @importFrom tibble rownames_to_column as_tibble
+#' @importFrom methods is
+#' @importFrom magrittr %>%
+#' @export
+#'
+gg4way.list <- function(DGEdata,
+                        ID = ID,
+                        symbol = symbol,
+                        logFC = logFC,
+                        FDR = FDR,
+                        ...){
+    if (all(vapply(DGEdata, is, logical(1), "DGELRT"))) {
+        if (missing(ID)) {ID <- "ID"}
+        if (missing(symbol)) {symbol <- "symbol"}
+        if (missing(logFC)) {logFC <- "logFC"}
+        if (missing(FDR)) {FDR <- "FDR"}
+
+    ## magrittr pipe used due to need for unnamed placeholder
+        DGEdata %>%
+            names() %>%
+            purrr::set_names() %>%
+            purrr::map(~ DGEdata[[.x]] %>%
+                           edgeR::topTags(n = Inf) %>%
+                           .$table %>%
+                           tibble::as_tibble()) %>%
+            purrr::set_names(names(.) %>%
+                                 stringr::str_replace("[-]", "vs")) %>%
+            gg4way.default(DGEdata = .,
+                           ID = ID,
+                           symbol = symbol,
+                           logFC = logFC,
+                           FDR = FDR,
+                           ...)
+
+    }else if (all(vapply(DGEdata, is, logical(1), "DESeqResults"))) {
+        if (missing(ID)) {ID <- "ID"}
+        if (missing(symbol)) {symbol <- "ID"}
+        if (missing(logFC)) {logFC <- "log2FoldChange"}
+        if (missing(FDR)) {FDR <- "padj"}
+
+        DGEdata %>%
+            purrr::map(~ .x %>%
+                           as.data.frame() %>%
+                           tibble::rownames_to_column("ID") %>%
+                           tibble::as_tibble()) %>%
+            gg4way.default(DGEdata = .,
+                           ID = ID,
+                           symbol = symbol,
+                           logFC = logFC,
+                           FDR = FDR,
+                           ...)
+
+    }else if (all(vapply(DGEdata, is.data.frame, logical(1)))) {
+        DGEdata %>%
+            gg4way.default(DGEdata = .,
+                           ...)
+    }else{
+        stop("Objects in list or their combination are not supported")
+    }
+}
+
+#' @rdname gg4way
+#' @usage NULL
+#' @importFrom DESeq2 results
+#' @importFrom purrr set_names map
+#' @importFrom stringr str_subset str_replace_all str_remove str_trim
+#' @importFrom tibble rownames_to_column as_tibble
+#' @importFrom magrittr %>%
+#' @export
+#'
+gg4way.DESeqDataSet <- function(DGEdata,
+                                ID = ID,
+                                symbol = symbol,
+                                logFC = logFC,
+                                FDR = FDR,
+                                ...){
+    if (missing(ID)) {ID <- "ID"}
+    if (missing(symbol)) {symbol <- "ID"}
+    if (missing(logFC)) {logFC <- "log2FoldChange"}
+    if (missing(FDR)) {FDR <- "padj"}
+
+    ## magrittr pipe used due to need for unnamed placeholder
+    DGEdata %>%
+        DESeq2::resultsNames() %>%
+        stringr::str_subset("Intercept", negate = TRUE) %>%
+        purrr::set_names() %>%
+        purrr::map(~ DGEdata %>%
+                       DESeq2::results(name = .x)) %>%
+        purrr::set_names(names(.) %>%
+                             stringr::str_replace_all("_", " ") %>%
+                             stringr::str_remove(stringr::word(., 1)) %>%
+                             stringr::str_trim()) %>%
+        purrr::map(~ .x %>%
+                       as.data.frame() %>%
+                       tibble::rownames_to_column("ID") %>%
+                       tibble::as_tibble()) %>%
+        gg4way.default(DGEdata = .,
+                       ID = ID,
+                       symbol = symbol,
+                       logFC = logFC,
+                       FDR = FDR,
+                       ...)
 }
