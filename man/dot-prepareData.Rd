@@ -22,7 +22,8 @@
 \item \code{limma:} A \link[limma:MArrayLM-class]{MArrayLM} object from
 \link[limma]{eBayes} or \link[limma]{treat}
 \item \code{edgeR:} A list of \link[edgeR:DGELRT-class]{DGELRT} objects
-from \link[edgeR]{glmQLFTest} or \link[edgeR]{glmTreat}
+from \link[edgeR]{glmQLFTest}, \link[edgeR]{glmTreat},
+or \link[edgeR]{glmLRT}
 \item \code{DESeq2:} a \link[DESeq2:DESeqDataSet-class]{DESeqDataSet} from
 \link[DESeq2]{DESeq} or a list of
 \link[DESeq2:DESeqResults-class]{DESeqResults} from \link[DESeq2]{results}

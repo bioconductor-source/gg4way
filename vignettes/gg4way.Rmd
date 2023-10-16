@@ -182,9 +182,11 @@ p1 |>
 
 # edgeR
 
-In addition to the output of limma, the functions are also compatible with edgeR and  DESeq2. If a user is starting here, they will first have to run the [Prepare data] and [limma-voom] subsections in the Quick start: limma section. The output from `edgeR::glmQLFTest` and `edgeR::glmTreat()` is supported.
+In addition to the output of limma, the functions are also compatible with edgeR and  DESeq2. If a user is starting here, they will first have to run the [Prepare data] and [limma-voom] subsections in the Quick start: limma section. The output from `edgeR::glmQLFTest()`, `edgeR::glmTreat()`, and `edgeR::glmLRT()` is supported.
 
 ```{r edgeRplot, fig.cap="gg4way from edgeR", fig.width=6, fig.height=6.5}
+library("purrr")
+
 rfit <- dge |>
     calcNormFactors() |>
     estimateDisp() |>
@@ -192,9 +194,9 @@ rfit <- dge |>
 
 rfit <- contr.matrix |> 
     colnames() |>
-    purrr::set_names() |>
-    purrr::map(~ rfit |>
-                   glmQLFTest(contrast = contr.matrix[,.x]))
+    set_names() |>
+    map(~ rfit |>
+            glmQLFTest(contrast = contr.matrix[,.x]))
 
 rfit |>
     gg4way(x = "N61311 vs N052611",
@@ -240,8 +242,6 @@ dds |>
 Although not shown, the same result as above can be obtained through the `contrast` argument of `DESeq2::results()`. This approach also allows the user to set the `lfcThreshold` in `DESeq2::results()`.
 
 ```{r DESeq2 contrast example, fig.show = "hide"}
-library("purrr")
-
 list("N61311 vs N052611" = c("cell", "N61311", "N052611"),
      "N061011 vs N052611" = c("cell", "N061011", "N052611")) |>
     map(~ results(dds, contrast = .x)) |>

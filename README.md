@@ -31,5 +31,5 @@ remotes::install_github("ben-laufer/gg4way")
 
 ## Examples
 
-See the package vignette.
+See the package [vignette](https://bioconductor.org/packages/release/bioc/vignettes/gg4way/inst/doc/gg4way.html).
 

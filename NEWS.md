@@ -1,3 +1,7 @@
+# gg4way 0.99.2
+
+* Documentation updates
+
 # gg4way 0.99.1
 
 * Revised based on: https://github.com/Bioconductor/Contributions/issues/3129
