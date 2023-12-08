@@ -6,6 +6,7 @@
 \alias{gg4way.MArrayLM}
 \alias{gg4way.list}
 \alias{gg4way.DESeqDataSet}
+\alias{gg4way.SimpleList}
 \title{Create a 4way plot}
 \usage{
 \method{gg4way}{default}(
