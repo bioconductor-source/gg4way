@@ -1,8 +1,8 @@
 #' @title Create a 4way plot
 #' @order 2
 #' @usage NULL
-#' @description Create a 4way plot to comparison the logFC values from
-#'  two contrasts of differential gene expression
+#' @description Create a 4way plot to compare the logFC values from
+#'  two contrasts of differential gene expression.
 #' @param DGEdata The object to plot from:
 #' \itemize{
 #' \item \code{limma:} A \link[limma:MArrayLM-class]{MArrayLM} object from
@@ -69,9 +69,11 @@ gg4way <- function(DGEdata,
 #' @rdname gg4way
 #' @order 1
 #' @name gg4way
-#' @importFrom dplyr filter
+#' @importFrom rlang warn sym
+#' @importFrom glue glue_collapse
+#' @importFrom dplyr filter pull
+#' @importFrom janitor tabyl
 #' @importFrom purrr set_names
-#' @importFrom rlang sym
 #' @examples
 #' data("airwayFit")
 #' airwayFit |>
@@ -102,11 +104,18 @@ gg4way.default <- function(DGEdata,
     }
     stopifnot(c(x,y) %in% names(DGEdata))
 
-    if (!all(DGEdata[[x]]$ID %in% DGEdata[[y]]$ID)) {
-        warning(x, " and ", y,
-                " don't share the same IDs. ",
-                "IDs will be filtered from the results.",
-                noBreaks. = TRUE)
+    missingFeatures <- c(DGEdata[[x]]$ID, DGEdata[[y]]$ID) %>%
+        janitor::tabyl() %>%
+        dplyr::filter(n == 1) %>%
+        dplyr::pull(1)
+
+    if (!identical(missingFeatures, character(0))) {
+        rlang::warn(paste(x, "and", y, "don't have some genes IDs in common.",
+                          length(missingFeatures), "IDs will be filtered out:",
+                          glue::glue_collapse({missingFeatures},
+                                              sep = ", ",
+                                              width = 37)),
+                    use_cli_format = TRUE)
     }
 
     DGEtibble <- .prepareData(DGEdata = DGEdata,
