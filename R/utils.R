@@ -263,8 +263,10 @@
             guide = ggplot2::guide_legend(
                 title = glue::glue("r = {tidyCor}",
                                    tidyCor = round(corRes, digits = 2)),
-                nrow = 2)) +
-        ## Use geom_label instead to prevent text form getting clipped
+                nrow = 2,
+                override.aes = list(size = 2)),
+            drop = FALSE) +
+        ## Use geom_label to prevent text from getting clipped
         ggplot2::geom_label(data = textKey,
                             ggplot2::aes(x = x,
                                          y = y,

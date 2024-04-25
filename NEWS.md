@@ -1,3 +1,7 @@
+# gg4way 1.1.3
+
+* Legend improvements
+
 # gg4way 1.0.2 
 
 * Improved warning for when genes are not shared by both contrasts
